@@ -344,7 +344,8 @@ body{min-height:100vh;min-height:100dvh}
   <select id="mapSelect" aria-label="เลือก Calibration Map"><option value="">ยังไม่มี Map</option></select>
   <button id="refreshMap" type="button">โหลดตาราง</button>
  </div>
- <div id="mapMeta" class="status">โหลด XDF แบบ XML ที่ไม่ถูกป้องกันเพื่อแสดง Calibration Map</div>
+ <div id="mapMeta" class="status">โหลด XDF เพื่อวิเคราะห์ Definition และ Calibration Map</div>
+ <div id="xdfDiag" class="status" style="display:none;border:1px solid #31516a;background:#091725;padding:12px;border-radius:8px;margin:10px 0"></div>
  <div class="scroll" style="max-height:560px">
   <div id="mapGridWrap" style="min-width:100%;padding:8px">
    <div class="empty">ยังไม่มี Calibration Map ที่อ่านได้</div>
@@ -369,9 +370,9 @@ body{min-height:100vh;min-height:100dvh}
 <div class="status" id="editStatus">ยังไม่มีการแก้ไข</div>
 </section>
 </main>
-<footer>SRP RACING PART · ENGINEERING SERIES · ECU STUDIO V1.1</footer>
+<footer>SRP RACING PART · ENGINEERING SERIES · PROTUNER V7.1</footer>
 <script>
-let original=null, working=null, xdfItems=[], xdfMaps=[], binName='', xdfName='', edits=0, protectedXdf=false;
+let original=null, working=null, xdfItems=[], xdfMaps=[], binName='', xdfName='', edits=0, protectedXdf=false, xdfFormat='unknown', xdfDiagnostics=null;
 const $=id=>document.getElementById(id);
 const bytesHex=n=>'0x'+n.toString(16).toUpperCase().padStart(6,'0');
 function setStatus(msg){$('status').innerHTML=msg}
@@ -463,11 +464,24 @@ function parseXdfXml(text){
  });
  return {items,maps,definitionTitle};
 }
-function isProtectedTunerProXdf(bytes){
- return bytes.length>=4&&bytes[0]===0x05&&bytes[1]===0x22&&bytes[2]===0x97&&bytes[3]===0x00;
+function inspectXdfBytes(bytes){
+ const head=[...bytes.slice(0,16)].map(x=>x.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+ const prefix=new TextDecoder('latin1').decode(bytes.slice(0,256)).replace(/^\uFEFF/,'').trimStart();
+ const looksXml=prefix.startsWith('<?xml')||/^<\?xml|^<XDFFORMAT/i.test(prefix);
+ const freq=new Uint32Array(256);let printable=0;
+ for(const b of bytes){freq[b]++;if((b>=32&&b<=126)||b===9||b===10||b===13)printable++;}
+ let entropy=0;for(const n of freq){if(n){const q=n/bytes.length;entropy-=q*Math.log2(q)}}
+ const signature=[...bytes.slice(0,4)].map(x=>x.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+ return {size:bytes.length,head,signature,looksXml,entropy:entropy.toFixed(3),printable:(100*printable/bytes.length).toFixed(1),
+  kind:looksXml?'XML_TEXT':signature==='05 22 97 00'?'BINARY_SIGNATURE_05_22_97_00':'UNKNOWN_BINARY'};
+}
+function showXdfDiagnostics(d){
+ const box=$('xdfDiag');if(!box)return;box.style.display='block';
+ const kind=d.kind==='XML_TEXT'?'XML Definition':d.kind==='BINARY_SIGNATURE_05_22_97_00'?'Binary Definition (พบ Signature)':'Binary/Unknown Definition';
+ box.innerHTML=`<b style="color:#72d5ff">XDF IMPORT DIAGNOSTICS</b><br>ประเภทที่ตรวจพบ: <b>${kind}</b><br>ขนาดไฟล์: ${d.size.toLocaleString()} bytes<br>Header 16 bytes: <code>${d.head}</code><br>Printable bytes: ${d.printable}% · Entropy: ${d.entropy} bits/byte<br><span class="warn">หมายเหตุ: ค่าเหล่านี้ใช้จำแนกไฟล์เท่านั้น ไม่ได้ยืนยันว่าไฟล์ถูกเข้ารหัสหรือบีบอัด</span><br><button type="button" id="copyDiag" style="margin-top:8px">คัดลอกรายงานตรวจสอบ</button>`;
+ $('copyDiag').onclick=()=>{const report=[`File: ${xdfName}`,`Size: ${d.size}`,`Kind: ${d.kind}`,`Signature: ${d.signature}`,`Header: ${d.head}`,`Printable: ${d.printable}%`,`Entropy: ${d.entropy} bits/byte`].join('\n');navigator.clipboard?.writeText(report).then(()=>setStatus('คัดลอกรายงาน XDF แล้ว')).catch(()=>alert(report));};
 }
 function decodeXdfText(bytes){
- // XDF XML files are normally UTF-8; Windows-1252 is a common legacy encoding.
  let text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
  if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
  return text;
@@ -484,13 +498,15 @@ $('xdfFile').addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;xdfName=f.name;
  try{
   const buffer=await f.arrayBuffer(),bytes=new Uint8Array(buffer);
-  protectedXdf=isProtectedTunerProXdf(bytes);
+  xdfDiagnostics=inspectXdfBytes(bytes);showXdfDiagnostics(xdfDiagnostics);
+  protectedXdf=xdfDiagnostics.kind!=='XML_TEXT';
+  xdfFormat=xdfDiagnostics.kind;
   xdfItems=[];xdfMaps=[];
   if(protectedXdf){
-   $('xdfCount').textContent='LOCKED';$('fileState').textContent='PROTECTED XDF';
-   $('mapMeta').innerHTML='<div class="protected-box"><b>ตรวจพบ XDF แบบ Binary Container</b><br>ไฟล์นี้ขึ้นต้นด้วย Signature 05 22 97 00 ซึ่งไม่ใช่ XML ที่อ่านได้โดยตรงจากเบราว์เซอร์ ขณะนี้ยังไม่มีข้อกำหนดรูปแบบหรือ API ที่ยืนยันวิธีแปลข้อมูลภายใน จึงยังไม่สามารถดึงรายการ Map ได้<br><br><b>วิธีดำเนินการ:</b> ขอ Definition แบบ XML ที่ผู้สร้างอนุญาตให้ส่งออก หรือใช้ฟังก์ชัน Export ที่ผู้จัดทำ Definition รองรับ แล้วนำไฟล์ XML ที่ได้มาเปิดที่นี่</div>';
-   $('mapGridWrap').innerHTML='<div class="empty">ยังไม่สามารถอ่านรายการ Map จาก Protected XDF นี้ได้</div>';
-   setStatus(`<span class="warn"><strong>${escapeHtml(f.name)}</strong> ตรวจพบ XDF แบบ Binary Container · ไม่ใช่ XML มาตรฐานที่ Parser รุ่นนี้รองรับ</span>`);
+   $('xdfCount').textContent='N/A';$('fileState').textContent='BINARY XDF';
+   $('mapMeta').innerHTML='<div class="protected-box"><b>ตรวจพบ XDF ที่ไม่ใช่ XML Text</b><br>SRP PROTUNER รุ่นนี้ยังไม่สามารถแปลโครงสร้าง Binary Definition นี้เป็นรายการ Calibration ได้ จึงไม่สร้าง Map หรือ Address ขึ้นมาเอง การพบ Signature หรือ Entropy สูงไม่ใช่หลักฐานว่าไฟล์ถูกเข้ารหัส<br><br><b>ขั้นตอนถัดไป:</b> ใช้รายงานด้านบนเพื่อเทียบไฟล์และขอรูปแบบ Export Definition ที่ได้รับอนุญาตจากผู้พัฒนาเครื่องมือ</div>';
+   $('mapGridWrap').innerHTML='<div class="empty">ยังไม่มี Map ที่ถอดความหมายจาก Definition นี้ได้</div>';
+   setStatus(`<span class="warn"><strong>${escapeHtml(f.name)}</strong> ตรวจพบไฟล์ XDF แบบ Binary · ยังไม่รองรับการแปลโครงสร้าง</span>`);
   }else{
    const parsed=parseXdfXml(decodeXdfText(bytes));
    xdfItems=parsed.items;xdfMaps=parsed.maps;
@@ -580,7 +596,7 @@ $('exportBtn').onclick=()=>{
 $('restoreBtn').onclick=()=>{if(!original)return;if(!confirm('คืนค่า BIN ต้นฉบับและยกเลิกการแก้ไขทั้งหมด?'))return;working=new Uint8Array(original);edits=0;renderParams();renderHex();renderMap();$('editStatus').textContent='คืนค่า BIN ต้นฉบับแล้ว'};
 function updateInfo(){
  if(!$('fileInfo'))return;
- $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Format:</b> ${protectedXdf?'Binary Container (ยังไม่รองรับการแปลโครงสร้าง)':(xdfItems.length?'XML':'ยังไม่อ่าน')}<br><b>Items:</b> ${xdfItems.length} · <b>Maps:</b> ${xdfMaps.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
+ $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Format:</b> ${escapeHtml(xdfFormat)}<br><b>Items:</b> ${xdfItems.length} · <b>Maps:</b> ${xdfMaps.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
