@@ -1,4 +1,4 @@
-const CACHE_NAME = "srp-protuner-pwa-v4-icon-clean";
+const CACHE_NAME = "srp-protuner-pwa-v5-lead125-xdf";
 const APP_SHELL = [
   "./",
   "./index.html",

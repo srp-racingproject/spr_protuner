@@ -37,6 +37,13 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:9px 7px;b
 .note{font-size:11px;color:var(--muted);line-height:1.65}.warn{color:#ffc27c}.good{color:#78e6b0}.danger{color:#ff8792}
 footer{text-align:center;color:#587590;font-size:10px;padding:8px 16px 22px}
 @media(max-width:600px){main{padding:10px}.stats{grid-template-columns:repeat(3,1fr)}.stat b{font-size:14px}.panel{padding:12px}.hexgrid{grid-template-columns:repeat(8,minmax(25px,1fr))}}
+
+.map-table{border-collapse:separate;border-spacing:2px;min-width:max-content;font-size:11px}
+.map-table th{background:#102943;color:#9fc8e9;text-align:center;min-width:54px;padding:7px 5px}
+.map-table td{background:#0b2942;color:#e8f6ff;text-align:center;min-width:54px;padding:7px 5px;border:1px solid #214866;border-radius:4px;font-variant-numeric:tabular-nums}
+.map-table td.axis{background:#132338;color:#9fb4c9}
+.map-legend{font-size:11px;color:var(--muted);padding:8px}
+.protected-box{border:1px solid #a66b2d;background:#382714;color:#ffd49c;border-radius:12px;padding:12px;line-height:1.65}
 </style>
 
 <style>
@@ -318,6 +325,7 @@ body{min-height:100vh;min-height:100dvh}
 <h2><i>02</i> CALIBRATION WORKSPACE <span>พื้นที่แก้ไขข้อมูล</span></h2>
 <div class="tabs">
  <button class="tab active" data-tab="params">XDF Parameters</button>
+ <button class="tab" data-tab="maps">Calibration Maps</button>
  <button class="tab" data-tab="hex">BIN Hex Viewer</button>
  <button class="tab" data-tab="info">File Information</button>
 </div>
@@ -328,7 +336,21 @@ body{min-height:100vh;min-height:100dvh}
   <select id="endian"><option value="le">Little Endian</option><option value="be">Big Endian</option></select>
  </div>
  <div class="scroll"><table><thead><tr><th>Parameter</th><th>Address</th><th>Raw Value</th><th>New Value</th><th>Action</th></tr></thead><tbody id="paramRows"><tr><td colspan="5" class="empty">โหลดไฟล์ XDF เพื่อแสดงรายการ Parameter</td></tr></tbody></table></div>
- <p class="note">หมายเหตุ: ค่าในตารางเป็นค่า Raw จาก BIN ยังไม่แปลงสมการ/หน่วยของ XDF โดยอัตโนมัติ เลือกชนิดข้อมูลและ Endian ให้ตรงกับ ECU ก่อนแก้ไข</p>
+ <p class="note">โหมด Advanced Raw Data: แสดงค่า Raw โดยตรง ไม่ใช่หน่วยจริงจาก ECU และต้องตรวจสอบชนิดข้อมูล/Endian ก่อนแก้ไข</p>
+</div>
+<div id="maps" class="tabpane" hidden>
+ <div class="toolbar">
+  <input id="mapSearch" type="text" placeholder="ค้นหาชื่อตาราง Map...">
+  <select id="mapSelect" aria-label="เลือก Calibration Map"><option value="">ยังไม่มี Map</option></select>
+  <button id="refreshMap" type="button">โหลดตาราง</button>
+ </div>
+ <div id="mapMeta" class="status">โหลด XDF แบบ XML ที่ไม่ถูกป้องกันเพื่อแสดง Calibration Map</div>
+ <div class="scroll" style="max-height:560px">
+  <div id="mapGridWrap" style="min-width:100%;padding:8px">
+   <div class="empty">ยังไม่มี Calibration Map ที่อ่านได้</div>
+  </div>
+ </div>
+ <p class="note">ตารางจะแสดงเมื่อ Definition ระบุ Address, จำนวนแถว/คอลัมน์ และชนิดข้อมูลที่อ่านได้ครบถ้วน ค่าแก้ไขในโหมดนี้ยังไม่ถูกเขียนกลับ BIN จนกว่าจะตรวจสอบรูปแบบ XDF และการแปลงค่าได้แน่นอน</p>
 </div>
 <div id="hex" class="tabpane" hidden>
  <div class="toolbar"><input id="hexOffset" type="number" min="0" value="0" placeholder="Offset"><button id="showHex">แสดง Offset</button><button id="prevHex">ก่อนหน้า</button><button id="nextHex">ถัดไป</button></div>
@@ -349,82 +371,185 @@ body{min-height:100vh;min-height:100dvh}
 </main>
 <footer>SRP RACING PART · ENGINEERING SERIES · ECU STUDIO V1.1</footer>
 <script>
-let original=null, working=null, xdfItems=[], binName='', xdfName='', hexPage=0, edits=0;
+let original=null, working=null, xdfItems=[], xdfMaps=[], binName='', xdfName='', edits=0, protectedXdf=false;
 const $=id=>document.getElementById(id);
 const bytesHex=n=>'0x'+n.toString(16).toUpperCase().padStart(6,'0');
 function setStatus(msg){$('status').innerHTML=msg}
-function readNum(buf,addr,fmt,endian){
- const bits=Number(fmt.match(/\d+/)[0]), size=bits/8;
- if(addr<0||addr+size>buf.length)return null;
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function parseAddr(v){
+ if(v===null||v===undefined||String(v).trim()==='')return null;
+ const s=String(v).trim();
+ if(/^0x/i.test(s))return parseInt(s,16);
+ if(/[a-f]/i.test(s))return parseInt(s,16);
+ return parseInt(s,10);
+}
+function readValue(buf,addr,bits,signed,little){
+ const size=bits/8;
+ if(![8,16,32].includes(bits)||addr<0||addr+size>buf.length)return null;
  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
- let v=bits===8?dv.getUint8(addr):bits===16?dv.getUint16(addr,endian==='le'):dv.getUint32(addr,endian==='le');
- if(fmt[0]==='s' && (v & (2**(bits-1)))) v-=2**bits;
+ let v=bits===8?(signed?dv.getInt8(addr):dv.getUint8(addr)):
+ bits===16?(signed?dv.getInt16(addr,little):dv.getUint16(addr,little)):
+ (signed?dv.getInt32(addr,little):dv.getUint32(addr,little));
  return v;
 }
+function readNum(buf,addr,fmt,endian){
+ const bits=Number(fmt.match(/\d+/)[0]);
+ return readValue(buf,addr,bits,fmt[0]==='s',endian==='le');
+}
 function writeNum(buf,addr,fmt,endian,value){
- const bits=Number(fmt.match(/\d+/)[0]),size=bits/8, v=Number(value);
- const min=fmt[0]==='s'?-(2**(bits-1)):0, max=fmt[0]==='s'?(2**(bits-1))-1:(2**bits)-1;
+ const bits=Number(fmt.match(/\d+/)[0]),size=bits/8,v=Number(value);
+ const signed=fmt[0]==='s';
+ const min=signed?-(2**(bits-1)):0,max=signed?(2**(bits-1))-1:(2**bits)-1;
  if(!Number.isInteger(v)||v<min||v>max)throw Error(`ค่าต้องอยู่ระหว่าง ${min} ถึง ${max}`);
  if(addr<0||addr+size>buf.length)throw Error('Address อยู่นอกขอบเขต BIN');
  const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
- if(bits===8)dv.setUint8(addr,v);else if(bits===16)dv.setUint16(addr,v,endian==='le');else dv.setUint32(addr,v,endian==='le');
+ if(bits===8){if(signed)dv.setInt8(addr,v);else dv.setUint8(addr,v)}
+ else if(bits===16){if(signed)dv.setInt16(addr,v,endian==='le');else dv.setUint16(addr,v,endian==='le')}
+ else {if(signed)dv.setInt32(addr,v,endian==='le');else dv.setUint32(addr,v,endian==='le')}
+}
+function directChild(el,tag){return [...el.children].find(c=>c.tagName.toUpperCase()===tag.toUpperCase())||null}
+function directText(el,tag){return directChild(el,tag)?.textContent?.trim()||''}
+function getEmbedded(el){
+ const nodes=[...el.querySelectorAll('EMBEDDEDDATA')];
+ return nodes[0]||null;
+}
+function getNumAttr(el,names, fallback=null){
+ for(const n of names){const v=el?.getAttribute(n);if(v!==null&&v!==''){const p=parseAddr(v);if(Number.isFinite(p))return p}}
+ return fallback;
+}
+function parseXdfXml(text){
+ const xml=new DOMParser().parseFromString(text,'application/xml');
+ if(xml.querySelector('parsererror'))throw Error('ไฟล์ XML ไม่ถูกต้อง');
+ const root=xml.documentElement;
+ if(!/XDFFORMAT/i.test(root.tagName))throw Error('ไม่พบรากเอกสาร XDFFORMAT');
+ const items=[],maps=[];
+ root.querySelectorAll('XDFCONSTANT, XDFTABLE').forEach((el,i)=>{
+  const title=directText(el,'title')||el.getAttribute('uniqueid')||`Item ${i+1}`;
+  const emb=getEmbedded(el);
+  const addr=parseAddr(emb?.getAttribute('mmedaddress'));
+  const bits=getNumAttr(emb,['mmedelementsizebits','mmedelementsize'],8);
+  const flags=parseAddr(emb?.getAttribute('mmedtypeflags'))||0;
+  const item={title,address:addr,bits,type:el.tagName,units:directText(el,'units'),category:el.getAttribute('category')||'',description:directText(el,'description')};
+  items.push(item);
+  if(el.tagName.toUpperCase()==='XDFTABLE'){
+   const axes={};
+   el.querySelectorAll(':scope > XDFAXIS').forEach(ax=>{
+    const id=(ax.getAttribute('id')||'').toLowerCase(), ae=getEmbedded(ax);
+    axes[id]={id,address:parseAddr(ae?.getAttribute('mmedaddress')),
+      bits:getNumAttr(ae,['mmedelementsizebits'],bits),
+      rows:getNumAttr(ae,['mmedrowcount','mmedrows','mmedcount'],null),
+      cols:getNumAttr(ae,['mmedcolcount','mmedcolumns'],null),
+      units:directText(ax,'units'),math:directChild(ax,'MATH')?.getAttribute('equation')||''};
+   });
+   const zAxis=axes.z||{};
+   const rows=zAxis.rows||getNumAttr(emb,['mmedrowcount','mmedrows'],null);
+   const cols=zAxis.cols||getNumAttr(emb,['mmedcolcount','mmedcolumns'],null);
+   maps.push({title,address:addr,bits,flags,axes,rows,cols,category:item.category,description:item.description});
+  }
+ });
+ return {items,maps};
+}
+function isProtectedTunerProXdf(bytes){
+ return bytes.length>=4&&bytes[0]===0x05&&bytes[1]===0x22&&bytes[2]===0x97&&bytes[3]===0x00;
 }
 $('binFile').addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;
  const a=await f.arrayBuffer();original=new Uint8Array(a);working=new Uint8Array(a);binName=f.name;edits=0;
  $('binSize').textContent=(a.byteLength/1024).toFixed(1)+' KB';$('fileState').textContent='BIN READY';
- $('exportBtn').disabled=false;$('restoreBtn').disabled=false;renderHex();renderParams();
- setStatus(`<strong>${f.name}</strong> โหลดแล้ว · ${a.byteLength.toLocaleString()} bytes`);
+ $('exportBtn').disabled=false;$('restoreBtn').disabled=false;renderHex();renderParams();renderMap();
+ setStatus(`<strong>${escapeHtml(f.name)}</strong> โหลดแล้ว · ${a.byteLength.toLocaleString()} bytes`);
  updateInfo();
 });
 $('xdfFile').addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;xdfName=f.name;
  try{
- const xml=new DOMParser().parseFromString(await f.text(),'application/xml');
- if(xml.querySelector('parsererror'))throw Error('รูปแบบ XML ไม่ถูกต้อง');
- xdfItems=[];
- xml.querySelectorAll('XDFCONSTANT, XDFTABLE').forEach((el,i)=>{
-  const title=el.querySelector(':scope > title')?.textContent?.trim()||el.getAttribute('uniqueid')||`Item ${i+1}`;
-  const emb=el.querySelector('EMBEDDEDDATA');
-  const addr=emb?.getAttribute('mmedaddress');
-  const bits=emb?.getAttribute('mmedelementsizebits')||'8';
-  if(addr!==null && addr!==undefined){
-   let address=parseInt(addr,addr.toLowerCase().startsWith('0x')?16:10);
-   if(!Number.isFinite(address))address=parseInt(addr,16);
-   xdfItems.push({title,address,bits,type:el.tagName,units:el.querySelector('units')?.textContent?.trim()||''});
-  }else{xdfItems.push({title,address:null,bits,type:el.tagName,units:''})}
- });
- $('xdfCount').textContent=xdfItems.length;$('fileState').textContent=original?'READY':'XDF READY';
- renderParams();updateInfo();setStatus(`<strong>${f.name}</strong> อ่าน XDF แล้ว · พบ ${xdfItems.length} รายการ`);
- }catch(err){setStatus(`<span class="danger">อ่าน XDF ไม่สำเร็จ: ${err.message}</span>`)}
+  const buffer=await f.arrayBuffer(),bytes=new Uint8Array(buffer);
+  protectedXdf=isProtectedTunerProXdf(bytes);
+  xdfItems=[];xdfMaps=[];
+  if(protectedXdf){
+   $('xdfCount').textContent='LOCKED';$('fileState').textContent='PROTECTED XDF';
+   $('mapMeta').innerHTML='<div class="protected-box"><b>ตรวจพบ TunerPro Native / Protected XDF</b><br>ไฟล์นี้ขึ้นต้นด้วย Signature 05 22 97 00 ซึ่งเป็น Container แบบ Binary/Protected ไม่ใช่ XDF XML ที่เว็บแอปอ่านได้โดยตรง แอปจะไม่พยายามถอดรหัสหรือแก้ไขการป้องกันไฟล์<br><br><b>วิธีดำเนินการ:</b> ขอ Definition แบบ XML ที่ผู้สร้างอนุญาตให้ส่งออก หรือใช้ฟังก์ชัน Export ที่ผู้จัดทำ Definition รองรับ แล้วนำไฟล์ XML ที่ได้มาเปิดที่นี่</div>';
+   $('mapGridWrap').innerHTML='<div class="empty">ยังไม่สามารถอ่านรายการ Map จาก Protected XDF นี้ได้</div>';
+   setStatus(`<span class="warn"><strong>${escapeHtml(f.name)}</strong> ตรวจพบไฟล์ TunerPro Protected XDF · ไม่ใช่ไฟล์เสีย แต่เป็นรูปแบบ Binary/Protected ที่ยังไม่มี interface สำหรับอ่านใน SRP PROTUNER</span>`);
+  }else{
+   const parsed=parseXdfXml(new TextDecoder('utf-8').decode(bytes));
+   xdfItems=parsed.items;xdfMaps=parsed.maps;
+   $('xdfCount').textContent=xdfItems.length;$('fileState').textContent=original?'READY':'XDF READY';
+   renderParams();renderMap();updateInfo();
+   setStatus(`<strong>${escapeHtml(f.name)}</strong> อ่าน XDF XML แล้ว · ${xdfItems.length} รายการ · ${xdfMaps.length} ตาราง`);
+  }
+ }catch(err){
+  $('xdfCount').textContent='ERROR';$('fileState').textContent='XDF ERROR';
+  setStatus(`<span class="danger">อ่าน XDF ไม่สำเร็จ: ${escapeHtml(err.message)}</span>`);
+ }
+ updateInfo();
 });
 function renderParams(){
- const body=$('paramRows');body.innerHTML='';
- const q=$('paramSearch').value.toLowerCase();
- const fmt=$('format').value,end=$('endian').value;
+ const body=$('paramRows');if(!body)return;body.innerHTML='';
+ const q=$('paramSearch').value.toLowerCase(),fmt=$('format').value,end=$('endian').value;
  const filtered=xdfItems.filter(x=>x.title.toLowerCase().includes(q));
- if(!filtered.length){body.innerHTML='<tr><td colspan="5" class="empty">ไม่พบ Parameter หรือยังไม่ได้โหลด XDF</td></tr>';return}
- filtered.forEach((x)=>{
-  const tr=document.createElement('tr');
+ if(!filtered.length){body.innerHTML='<tr><td colspan="5" class="empty">ไม่พบ Parameter หรือ Definition ยังไม่รองรับ</td></tr>';return}
+ filtered.forEach(x=>{
+  const i=xdfItems.indexOf(x),tr=document.createElement('tr');
   const raw=working&&x.address!==null?readNum(working,x.address,fmt,end):null;
-  const addr=x.address===null?'—':bytesHex(x.address);
-  tr.innerHTML=`<td>${escapeHtml(x.title)}<br><small style="color:#7596b4">${x.type} · ${x.bits} bit</small></td><td><code>${addr}</code></td><td>${raw===null?'—':raw}</td><td><input type="number" step="1" style="width:100px;padding:7px" id="v${xdfItems.indexOf(x)}" ${!working||x.address===null?'disabled':''} value="${raw??''}"></td><td><button class="primary" data-edit="${xdfItems.indexOf(x)}" ${!working||x.address===null?'disabled':''}>เขียน</button></td>`;
+  tr.innerHTML=`<td>${escapeHtml(x.title)}<br><small style="color:#7596b4">${x.type} · ${x.bits} bit</small></td><td><code>${x.address===null?'—':bytesHex(x.address)}</code></td><td>${raw===null?'—':raw}</td><td><input type="number" step="1" style="width:100px;padding:7px" id="v${i}" ${!working||x.address===null?'disabled':''} value="${raw??''}"></td><td><button class="primary" data-edit="${i}" ${!working||x.address===null?'disabled':''}>เขียน</button></td>`;
   body.appendChild(tr);
  });
  body.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>{
-  const i=Number(b.dataset.edit),x=xdfItems[i],input=$('v'+i);
-  try{writeNum(working,x.address,$('format').value,$('endian').value,input.value);edits++;$('editStatus').innerHTML=`<span class="good">แก้ไขแล้ว ${edits} รายการ · ยังไม่ได้ส่งออกไฟล์</span>`;renderParams();renderHex();}
+  const i=Number(b.dataset.edit),x=xdfItems[i];
+  try{writeNum(working,x.address,$('format').value,$('endian').value,$('v'+i).value);edits++;$('editStatus').innerHTML=`<span class="good">แก้ไขแล้ว ${edits} รายการ · ยังไม่ได้ส่งออกไฟล์</span>`;renderParams();renderHex();}
   catch(err){alert(err.message)}
  }));
 }
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-$('paramSearch').addEventListener('input',renderParams);$('format').addEventListener('change',renderParams);$('endian').addEventListener('change',renderParams);
+function renderMap(){
+ const select=$('mapSelect');if(!select)return;
+ const q=($('mapSearch').value||'').toLowerCase();
+ const filtered=xdfMaps.filter(m=>m.title.toLowerCase().includes(q));
+ select.innerHTML=filtered.length?filtered.map(m=>`<option value="${xdfMaps.indexOf(m)}">${escapeHtml(m.title)}</option>`).join(''):'<option value="">ไม่พบ Map</option>';
+ if(filtered.length)showSelectedMap();
+}
+function showSelectedMap(){
+ const wrap=$('mapGridWrap'),meta=$('mapMeta');if(!wrap)return;
+ const idx=Number($('mapSelect').value),m=xdfMaps[idx];
+ if(!m){wrap.innerHTML='<div class="empty">ยังไม่มี Calibration Map ที่อ่านได้</div>';return}
+ const bits=Number(m.bits)||8,byteCount=bits/8,rows=Number(m.rows)||0,cols=Number(m.cols)||0;
+ if(!working||m.address===null||!rows||!cols||rows>128||cols>128||![8,16,32].includes(bits)){
+  wrap.innerHTML='<div class="empty">พบ Definition ของตารางนี้ แต่ยังขาดข้อมูล Address / จำนวนแถว-คอลัมน์ / Data Type ที่ยืนยันได้ จึงยังไม่อ่านค่ามาแสดงเพื่อป้องกันการตีความผิด</div>';
+  meta.textContent=`${m.title} · Address ${m.address===null?'ไม่ระบุ':bytesHex(m.address)} · ${rows||'?'} × ${cols||'?'} · ${bits}-bit`;
+  return;
+ }
+ const total=rows*cols*byteCount;
+ if(m.address<0||m.address+total>working.length){
+  wrap.innerHTML='<div class="empty danger">Address หรือขนาดตารางอยู่นอกขอบเขต BIN ที่โหลดไว้ — ไม่อ่านข้อมูล</div>';return;
+ }
+ // Conservative default: TunerPro element flags determine byte order/signedness in many definitions.
+ const little=(m.flags&0x1000)===0, signed=(m.flags&0x2000)!==0;
+ let html='<table class="map-table"><thead><tr><th>Y / X</th>';
+ for(let c=0;c<cols;c++)html+=`<th>${c+1}</th>`;
+ html+='</tr></thead><tbody>';
+ const vals=[];
+ for(let r=0;r<rows;r++){
+  html+=`<tr><th>${r+1}</th>`;
+  for(let c=0;c<cols;c++){
+   const addr=m.address+(r*cols+c)*byteCount,v=readValue(working,addr,bits,signed,little);
+   vals.push(v);html+=`<td>${v===null?'—':v}</td>`;
+  }
+  html+='</tr>';
+ }
+ html+='</tbody></table>';
+ wrap.innerHTML=html;
+ meta.textContent=`${m.title} · ${bytesHex(m.address)} · ${rows} × ${cols} · ${bits}-bit · ${little?'Little':'Big'} Endian · ${signed?'Signed':'Unsigned'} · แสดงค่า Raw`;
+}
+$('mapSearch')?.addEventListener('input',renderMap);
+$('mapSelect')?.addEventListener('change',showSelectedMap);
+$('refreshMap')?.addEventListener('click',showSelectedMap);
 function renderHex(){
  if(!working)return;const start=Math.max(0,Number($('hexOffset').value)||0),grid=$('hexGrid');grid.innerHTML='';
  const end=Math.min(working.length,start+256);
  for(let i=start;i<end;i++){const d=document.createElement('div');d.className='byte';d.textContent=working[i].toString(16).toUpperCase().padStart(2,'0');d.title=bytesHex(i);grid.appendChild(d)}
  $('hexOffset').value=start;
 }
+$('paramSearch').addEventListener('input',renderParams);$('format').addEventListener('change',renderParams);$('endian').addEventListener('change',renderParams);
 $('showHex').onclick=renderHex;$('prevHex').onclick=()=>{$('hexOffset').value=Math.max(0,(Number($('hexOffset').value)||0)-256);renderHex()};
 $('nextHex').onclick=()=>{$('hexOffset').value=Math.min(Math.max(0,working?.length-1||0),(Number($('hexOffset').value)||0)+256);renderHex()};
 $('exportBtn').onclick=()=>{
@@ -432,9 +557,10 @@ $('exportBtn').onclick=()=>{
  a.href=url;a.download=(binName.replace(/\.[^.]+$/,'')||'ecu')+'_modified.bin';a.click();URL.revokeObjectURL(url);
  $('editStatus').innerHTML=`<span class="good">ส่งออกไฟล์แล้ว · ${edits} edits ใน session นี้</span>`;
 };
-$('restoreBtn').onclick=()=>{if(!original)return;if(!confirm('คืนค่า BIN ต้นฉบับและยกเลิกการแก้ไขทั้งหมด?'))return;working=new Uint8Array(original);edits=0;renderParams();renderHex();$('editStatus').textContent='คืนค่า BIN ต้นฉบับแล้ว'};
+$('restoreBtn').onclick=()=>{if(!original)return;if(!confirm('คืนค่า BIN ต้นฉบับและยกเลิกการแก้ไขทั้งหมด?'))return;working=new Uint8Array(original);edits=0;renderParams();renderHex();renderMap();$('editStatus').textContent='คืนค่า BIN ต้นฉบับแล้ว'};
 function updateInfo(){
- $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Items:</b> ${xdfItems.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
+ if(!$('fileInfo'))return;
+ $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Format:</b> ${protectedXdf?'TunerPro Native / Protected Binary':(xdfItems.length?'XML':'ยังไม่อ่าน')}<br><b>Items:</b> ${xdfItems.length} · <b>Maps:</b> ${xdfMaps.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
