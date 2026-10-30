@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#071426">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#06101f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SRP PROTUNER">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<title>SRP ECU STUDIO</title>
+<style>
+:root{--bg:#06101d;--panel:#0c1b2d;--panel2:#10243a;--line:#1e3b59;--blue:#168cff;--cyan:#35c8ff;--text:#eaf4ff;--muted:#8ca7c2;--orange:#ff9b42;--red:#ff5c6c}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% -20%,#12385c 0,transparent 45%),var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:18px 16px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;background:#071426ed;backdrop-filter:blur(14px);z-index:3}
+.logo{width:42px;height:42px;border:1px solid #258de0;border-radius:12px;display:grid;place-items:center;color:#55c9ff;font-weight:900;font-style:italic;box-shadow:0 0 22px #168cff33}
+h1{font-size:17px;margin:0;letter-spacing:.8px}header small{color:var(--muted);font-size:11px}
+main{max-width:1100px;margin:auto;padding:16px;display:grid;gap:14px}
+.panel{background:linear-gradient(145deg,#10243a,#091727);border:1px solid var(--line);border-radius:16px;padding:15px;box-shadow:0 10px 28px #0003}
+h2{font-size:14px;margin:0 0 12px;color:#bfe5ff;letter-spacing:.3px}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.filebox{flex:1;min-width:220px;border:1px dashed #2c5c83;border-radius:12px;padding:12px;background:#081727}
+.filebox label{display:block;font-size:12px;color:#b7d7f2;margin-bottom:7px}.filebox input{width:100%;font-size:12px;color:var(--muted)}
+button,select,input[type=text],input[type=number]{background:#102b45;color:var(--text);border:1px solid #285477;border-radius:9px;padding:10px 12px;font:inherit}
+button{cursor:pointer;font-weight:650;font-size:12px}button.primary{background:linear-gradient(135deg,#0877d9,#12a8ed);border:0}button.orange{background:linear-gradient(135deg,#c96a19,#ff9b42);border:0;color:#1b1209}button:disabled{opacity:.4;cursor:not-allowed}
+.status{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6}.status strong{color:#69d4ff}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.stat{background:#081727;border:1px solid #193957;padding:10px;border-radius:10px}.stat b{display:block;font-size:17px;color:#61caff}.stat span{font-size:10px;color:var(--muted)}
+.tabs{display:flex;gap:7px;overflow:auto;margin-bottom:12px}.tab{white-space:nowrap}.tab.active{background:#087bd5;border-color:#087bd5}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.toolbar input{flex:1;min-width:140px}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:9px 7px;border-bottom:1px solid #1b3550;text-align:left}th{color:#91b7d7;font-weight:600;position:sticky;top:0;background:#0b1b2c}td code{color:#76d4ff}.scroll{overflow:auto;max-height:440px;border:1px solid #1b3550;border-radius:10px}
+.empty{text-align:center;color:var(--muted);padding:28px 10px;font-size:12px}
+.hexgrid{display:grid;grid-template-columns:repeat(16,minmax(26px,1fr));gap:3px}.byte{background:#0a1c2e;border:1px solid #193957;border-radius:4px;text-align:center;padding:5px 1px;font:10px ui-monospace,monospace;color:#bfe7ff}
+.note{font-size:11px;color:var(--muted);line-height:1.65}.warn{color:#ffc27c}.good{color:#78e6b0}.danger{color:#ff8792}
+footer{text-align:center;color:#587590;font-size:10px;padding:8px 16px 22px}
+@media(max-width:600px){main{padding:10px}.stats{grid-template-columns:repeat(3,1fr)}.stat b{font-size:14px}.panel{padding:12px}.hexgrid{grid-template-columns:repeat(8,minmax(25px,1fr))}}
+</style>
+
+<style>
+:root{--bg:#070d16;--panel:#0b1420;--panel2:#101e2c;--line:#243343;--blue:#24a9ee;--cyan:#62d5ff;--text:#e8f0f7;--muted:#8295a8;--orange:#e7a24c}
+*{box-sizing:border-box}
+body{margin:0;color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% -25%,#17344b 0%,transparent 55%),linear-gradient(180deg,#080f18,#060b12 75%);background-attachment:fixed}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.13;background-image:linear-gradient(#3a617d22 1px,transparent 1px),linear-gradient(90deg,#3a617d22 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
+header{max-width:820px;margin:auto;padding:24px 18px 18px;border:0;border-bottom:1px solid #243747;background:transparent;backdrop-filter:none;position:relative;top:auto;gap:14px}
+.logo{width:44px;height:44px;border-radius:8px;background:linear-gradient(145deg,#142e43,#091521);border:1px solid #39718f;color:#70d7ff;font-size:16px;box-shadow:0 0 24px #2ab8f522}
+header h1{font-size:23px;letter-spacing:1.5px;font-weight:850;line-height:1.15}
+header h1 span{color:#5bcaff}
+header .eyebrow{font-size:9px;letter-spacing:2px;color:#82a5bd;display:block;margin-bottom:5px}
+main{max-width:820px;padding:18px;gap:13px}
+.panel{position:relative;background:linear-gradient(145deg,#101d2aee,#0a131eee);border:1px solid #2a3c4d;border-radius:10px;padding:18px;box-shadow:0 12px 28px #0003}
+.panel:after{content:"";position:absolute;left:0;top:0;width:42px;height:2px;background:linear-gradient(90deg,#39c4ff,transparent)}
+h2{display:flex;align-items:center;gap:9px;margin:0 0 15px;color:#e6f4ff;font-size:12px;letter-spacing:1.2px;font-weight:800}
+h2 i{font-style:normal;color:#5bcaff;font:700 11px ui-monospace,monospace;border:1px solid #315c77;padding:4px 6px;border-radius:4px}
+h2 span{margin-left:auto;color:#8096a9;font-size:10px;font-weight:500;letter-spacing:0}
+.filebox{background:#09131e;border:1px solid #2a4255;border-radius:7px;padding:13px}
+.filebox label{font-size:10px;letter-spacing:.6px;color:#a9c7dc}
+.filebox input{font-size:11px}
+.stats{gap:8px}
+.stat{background:#08121c;border:1px solid #263c4d;border-radius:7px;padding:11px}
+.stat b{font-size:17px;color:#62cfff;font-family:ui-monospace,monospace}
+.stat span{font-size:9px;letter-spacing:1px}
+button,select,input[type=text],input[type=number]{background:#0c1b29;color:#e8f3fc;border:1px solid #304b60;border-radius:6px;padding:10px 11px;font-size:11px}
+button{letter-spacing:.35px;transition:.18s ease}
+button:hover:not(:disabled){border-color:#5bcaff;transform:translateY(-1px);box-shadow:0 4px 15px #20a9ef22}
+button.primary,.tab.active{background:linear-gradient(135deg,#087bbd,#159fd8);border:1px solid #31b7f2;color:white}
+button.orange{background:linear-gradient(135deg,#b86e27,#e5a24c);color:#17120b;border:0}
+.tabs{gap:6px;border-bottom:1px solid #263b4e;padding-bottom:10px}
+.tab{background:#0a1723;border-color:#2b4052}
+.toolbar{gap:7px}
+.scroll{border:1px solid #263d50;border-radius:7px;background:#08121c}
+table{font-size:11px}
+th{background:#0d1d2b;color:#8cb6d1;font-size:9px;letter-spacing:.8px;text-transform:uppercase}
+td{border-color:#1d3041}
+td code{color:#65d2ff}
+.byte{background:#0b1b29;border-color:#1e3b50;border-radius:3px}
+.status{font-size:11px;color:#91a9bc}
+.note{font-size:10px;line-height:1.7}
+footer{position:relative;color:#62798d;letter-spacing:1.2px;font-size:9px}
+@media(max-width:600px){header{padding:18px 14px 14px}header h1{font-size:20px}main{padding:12px}.panel{padding:14px}.stats{gap:5px}.stat{padding:8px 6px}.stat b{font-size:13px}.stat span{font-size:8px}h2{font-size:10px;letter-spacing:.7px}h2 span{font-size:9px}.filebox{min-width:100%}.toolbar input{min-width:100%}}
+</style>
+
+<style>
+/* Landscape optimization for phones and tablets */
+@media (orientation:landscape) and (max-height:600px){
+ header{max-width:100%;padding:10px 22px;gap:10px}
+ .logo{width:34px;height:34px}
+ header h1{font-size:18px}
+ header .eyebrow{font-size:8px;margin-bottom:2px}
+ main{max-width:1200px;padding:10px 18px;gap:9px}
+ .panel{padding:12px 14px;border-radius:8px}
+ h2{margin-bottom:9px;font-size:11px}
+ .filebox{padding:9px 11px;min-width:200px}
+ .stats{margin-top:8px}
+ .stat{padding:7px 9px}
+ .stat b{font-size:15px}
+ .tabs{margin-bottom:8px;padding-bottom:7px}
+ .toolbar{margin-bottom:7px}
+ .scroll{max-height:calc(100vh - 300px)}
+ .note{margin:7px 0}
+ footer{padding:5px 12px 10px}
+}
+@media (orientation:landscape) and (min-width:700px){
+ main{max-width:1280px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+ main>section:first-child{grid-column:1/-1}
+ main>section:nth-child(2){grid-column:1/-1}
+ main>section:nth-child(3){grid-column:1/-1}
+ .panel{padding:16px 18px}
+ .scroll{max-height:52vh}
+}
+@media (orientation:landscape) and (max-width:900px){
+ .filebox{min-width:0}
+ .row{flex-wrap:nowrap}
+ .filebox input{max-width:100%}
+ .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+</style>
+
+<style>
+:root{
+ --bg:#06101f;--panel:#0a1423;--panel2:#0d1b2d;--line:#233b59;
+ --blue:#147ee8;--cyan:#57c9ff;--text:#f0f5fb;--muted:#91a7bf;--orange:#e8a14a
+}
+html{min-height:100%;background:#06101f}
+body{
+ min-height:100vh;color:var(--text);
+ font-family:Inter,Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;
+ background:
+  radial-gradient(ellipse at 95% 15%,rgba(10,91,163,.38),transparent 43%),
+  radial-gradient(ellipse at 5% 55%,rgba(5,42,81,.24),transparent 50%),
+  linear-gradient(145deg,#07101e 0%,#081525 52%,#06101d 100%);
+ background-attachment:fixed
+}
+body:before{opacity:.07;background-size:38px 38px}
+header{
+ max-width:820px;margin:0 auto;padding:28px 26px 24px;border:0;border-bottom:1px solid #213b59;
+ display:flex;justify-content:space-between;align-items:center;background:transparent;position:relative;top:auto;backdrop-filter:none
+}
+.brandmark{width:270px;line-height:.78;transform:skew(-8deg);filter:drop-shadow(0 5px 9px #087bff55)}
+.brand-main{
+ font-size:65px;font-weight:1000;font-style:italic;letter-spacing:-5px;
+ color:#f2f5fa;-webkit-text-stroke:1px #b9d9ff;
+ text-shadow:3px 4px 0 #164a91,5px 6px 0 #06172e,0 0 16px #168cff
+}
+.brand-sub{font-size:24px;font-weight:900;font-style:italic;letter-spacing:-1px;color:#25bfff;text-shadow:2px 2px 0 #0b3470;margin-left:10px}
+.product-pill{border:1px solid #31577b;border-radius:9px;padding:12px 16px;color:#91cfff;font-size:12px;font-weight:850;letter-spacing:1.5px;background:#0b1c30a8}
+.product-pill b{color:#48e0a2;margin-left:5px;font-size:10px}
+.hero{max-width:820px;margin:0 auto;padding:38px 32px 24px}
+.hero-kicker{font-size:13px;font-weight:900;letter-spacing:4px;color:#5dc8ff;margin-bottom:15px}
+.hero h1{font-size:49px;line-height:1.02;letter-spacing:-2.5px;font-weight:950;margin:0;color:#f3f7fc}
+.hero h1 span{color:#1689f4}
+.hero p{max-width:690px;font-size:17px;line-height:1.9;color:#9aadc2;margin:20px 0 24px}
+.hero-rule{height:5px;width:195px;border-radius:8px;background:linear-gradient(90deg,#168eff,#59d6ff,#1b526e,transparent)}
+main{max-width:820px;padding:20px 26px 18px;gap:22px}
+.panel{
+ background:linear-gradient(145deg,rgba(11,22,37,.97),rgba(7,16,29,.98));
+ border:1px solid #29415f;border-radius:24px;padding:23px;
+ box-shadow:0 12px 34px #0003,inset 0 1px 0 #ffffff08;position:relative
+}
+.panel:after{display:none}
+h2{display:flex;align-items:center;gap:14px;margin:0 0 22px;color:#edf5fc;font-size:19px;font-weight:850;letter-spacing:-.3px}
+h2 i{
+ font-style:normal;min-width:46px;height:46px;display:grid;place-items:center;
+ border-radius:12px;background:linear-gradient(145deg,#178df5,#0755ad);
+ color:white;font-size:18px;box-shadow:0 5px 16px #0879e644
+}
+h2 span{margin-left:0;color:#7894b2;font-size:13px;font-weight:600;letter-spacing:0}
+.filebox{background:#060f1b;border:1px solid #2b405d;border-radius:13px;padding:15px}
+.filebox label{font-size:12px;color:#a6bbd1;font-weight:650}
+.filebox input{font-size:12px}
+.stats{gap:12px;margin-top:17px}
+.stat{background:#07111e;border:1px solid #2a405d;border-radius:15px;padding:15px}
+.stat b{font-size:20px;color:#f2f6fb;font-weight:850}
+.stat span{font-size:11px;color:#91a8c0}
+button,select,input[type=text],input[type=number]{
+ background:#050e19;color:#edf5fc;border:1px solid #2b405d;border-radius:11px;padding:12px 14px;font:inherit
+}
+button{font-size:12px;font-weight:750}
+button.primary,.tab.active{background:linear-gradient(135deg,#116fc8,#168ff2);border:1px solid #3aa9ff;color:white}
+button.orange{background:linear-gradient(135deg,#c47b31,#efae58);border:0;color:#17120b}
+.tabs{gap:8px;border-bottom:1px solid #243b57;padding-bottom:12px}
+.tab{background:#091523;border-color:#2a405b}
+.scroll{border:1px solid #263e5b;border-radius:12px;background:#07111d}
+th{background:#0d1a2b;color:#9dbbd7}
+td{border-color:#1c3048}
+td code{color:#64ceff}
+.byte{background:#091a2c;border-color:#1d3b5b;color:#c4e8ff}
+.status{font-size:12px;color:#9aafc5}
+.note{font-size:11px;color:#91a7bd;line-height:1.8}
+footer{max-width:820px;margin:auto;color:#7188a2;letter-spacing:1.2px;font-size:9px}
+@media(max-width:600px){
+ header{padding:28px 26px 24px}
+ .brandmark{width:205px}
+ .brand-main{font-size:54px}
+ .brand-sub{font-size:20px}
+ .product-pill{font-size:10px;padding:10px 11px}
+ .hero{padding:38px 32px 20px}
+ .hero-kicker{font-size:11px;letter-spacing:3px}
+ .hero h1{font-size:43px}
+ .hero p{font-size:15px;line-height:1.85}
+ main{padding:18px 25px;gap:22px}
+ .panel{padding:22px;border-radius:24px}
+ h2{font-size:16px;gap:12px;flex-wrap:wrap}
+ h2 i{min-width:46px;height:46px}
+ h2 span{font-size:12px}
+ .filebox{min-width:100%}
+ .stats{gap:9px}
+ .stat{padding:13px 11px}
+ .stat b{font-size:17px}
+ .stat span{font-size:10px}
+ .toolbar input{min-width:100%}
+}
+@media(max-width:390px){
+ header{padding-left:18px;padding-right:18px}
+ .brandmark{width:175px}
+ .brand-main{font-size:47px}
+ .brand-sub{font-size:17px}
+ .product-pill{font-size:9px;letter-spacing:1px}
+ .hero{padding-left:23px;padding-right:23px}
+ main{padding-left:16px;padding-right:16px}
+ .panel{padding:17px}
+ h2{font-size:14px}
+}
+@media (orientation:landscape) and (max-height:600px){
+ header{padding:10px 22px}
+ .brandmark{width:180px}
+ .brand-main{font-size:42px}
+ .brand-sub{font-size:16px}
+ .product-pill{padding:8px 12px}
+ .hero{padding:15px 24px 10px}
+ .hero h1{font-size:32px}
+ .hero p{font-size:12px;margin:9px 0}
+ .hero-kicker{font-size:9px;margin-bottom:6px}
+ .hero-rule{height:3px}
+ main{max-width:1200px;padding:10px 18px;gap:10px}
+ .panel{padding:13px 16px;border-radius:16px}
+ h2{font-size:13px;margin-bottom:10px}
+ h2 i{min-width:34px;height:34px;font-size:14px}
+ .stats{margin-top:8px}
+ .stat{padding:8px}
+ .scroll{max-height:calc(100vh - 260px)}
+}
+@media (orientation:landscape) and (min-width:700px){
+ main{max-width:1280px}
+}
+</style>
+
+<style>
+/* Final viewport and edge-to-edge correction */
+html,body{width:100%;min-width:0;max-width:100%;margin:0;overflow-x:hidden}
+header,.hero,main,footer{box-sizing:border-box;width:100%;min-width:0}
+header{justify-content:flex-end}
+.hero{margin-left:auto;margin-right:auto}
+main{display:grid;grid-template-columns:minmax(0,1fr)}
+main>.panel{width:100%;min-width:0;max-width:100%}
+.panel,.row,.filebox,.stats,.tabpane{min-width:0}
+.filebox{width:100%;max-width:100%}
+.stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.scroll{max-width:100%;min-width:0}
+@media(max-width:820px){
+ header,.hero,main,footer{max-width:none}
+}
+@media(max-width:600px){
+ header{padding-left:26px;padding-right:26px}
+ .hero{padding-left:32px;padding-right:32px}
+ main{padding-left:25px;padding-right:25px}
+ .panel{width:100%;max-width:100%}
+ .filebox{min-width:0}
+ .row{width:100%;flex-wrap:wrap}
+ .stats{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:390px){
+ header{padding-left:18px;padding-right:18px}
+ .hero{padding-left:23px;padding-right:23px}
+ main{padding-left:16px;padding-right:16px}
+}
+</style>
+
+<style>
+header{display:none!important;height:0!important;min-height:0!important;padding:0!important;margin:0!important;border:0!important}
+.hero{padding-top:30px}
+@media(max-width:600px){.hero{padding-top:30px}}
+@media (orientation:landscape) and (max-height:600px){.hero{padding-top:12px}}
+</style>
+<style>
+html,body{min-height:100%;width:100%;margin:0}
+body{min-height:100vh;min-height:100dvh}
+@supports(padding:max(0px)){
+ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+}
+</style>
+</head>
+<body>
+<section class="hero">
+ <div class="hero-kicker">ECU CALIBRATION / ENGINE MANAGEMENT</div>
+ <h1>SRP <span>ECU</span><br>STUDIO</h1>
+ <p>เครื่องมือสำหรับเปิด วิเคราะห์ และแก้ไขไฟล์ ECU รองรับ XDF Definition และ BIN Firmware ในพื้นที่ทำงานเดียวกัน</p>
+ <div class="hero-rule"></div>
+</section>
+<main>
+<section class="panel">
+<h2><i>01</i> ECU FILE CONFIGURATION <span>จัดการไฟล์ ECU</span></h2>
+<div class="row">
+ <div class="filebox"><label>BIN FILE — ECU firmware</label><input id="binFile" type="file" accept=".bin,.rom,.ori,.hex"></div>
+ <div class="filebox"><label>XDF FILE — TunerPro definition</label><input id="xdfFile" type="file" accept=".xdf,.xml"></div>
+</div>
+<div class="stats">
+ <div class="stat"><b id="binSize">—</b><span>BIN SIZE</span></div>
+ <div class="stat"><b id="xdfCount">—</b><span>XDF ITEMS</span></div>
+ <div class="stat"><b id="fileState">WAITING</b><span>WORKSPACE</span></div>
+</div>
+<div class="status" id="status">เลือกไฟล์ BIN และ XDF เพื่อเริ่มต้น — สามารถเปิด BIN เดี่ยวเพื่อดูข้อมูล Hex ได้</div>
+</section>
+
+<section class="panel">
+<h2><i>02</i> CALIBRATION WORKSPACE <span>พื้นที่แก้ไขข้อมูล</span></h2>
+<div class="tabs">
+ <button class="tab active" data-tab="params">XDF Parameters</button>
+ <button class="tab" data-tab="hex">BIN Hex Viewer</button>
+ <button class="tab" data-tab="info">File Information</button>
+</div>
+<div id="params" class="tabpane">
+ <div class="toolbar">
+  <input id="paramSearch" type="text" placeholder="ค้นหาชื่อ Parameter...">
+  <select id="format"><option value="u8">Unsigned 8-bit</option><option value="s8">Signed 8-bit</option><option value="u16">Unsigned 16-bit</option><option value="s16">Signed 16-bit</option><option value="u32">Unsigned 32-bit</option><option value="s32">Signed 32-bit</option></select>
+  <select id="endian"><option value="le">Little Endian</option><option value="be">Big Endian</option></select>
+ </div>
+ <div class="scroll"><table><thead><tr><th>Parameter</th><th>Address</th><th>Raw Value</th><th>New Value</th><th>Action</th></tr></thead><tbody id="paramRows"><tr><td colspan="5" class="empty">โหลดไฟล์ XDF เพื่อแสดงรายการ Parameter</td></tr></tbody></table></div>
+ <p class="note">หมายเหตุ: ค่าในตารางเป็นค่า Raw จาก BIN ยังไม่แปลงสมการ/หน่วยของ XDF โดยอัตโนมัติ เลือกชนิดข้อมูลและ Endian ให้ตรงกับ ECU ก่อนแก้ไข</p>
+</div>
+<div id="hex" class="tabpane" hidden>
+ <div class="toolbar"><input id="hexOffset" type="number" min="0" value="0" placeholder="Offset"><button id="showHex">แสดง Offset</button><button id="prevHex">ก่อนหน้า</button><button id="nextHex">ถัดไป</button></div>
+ <div class="scroll" style="padding:10px"><div id="hexGrid" class="hexgrid"><div class="empty" style="grid-column:1/-1">โหลดไฟล์ BIN เพื่อดู Hex</div></div></div>
+ <p class="note">แสดงข้อมูล 256 bytes ต่อหน้า · Offset เป็นเลขฐานสิบหกในคอลัมน์ด้านล่าง</p>
+</div>
+<div id="info" class="tabpane" hidden>
+ <div id="fileInfo" class="note">ยังไม่มีข้อมูลไฟล์</div>
+</div>
+</section>
+
+<section class="panel">
+<h2><i>03</i> EXPORT &amp; VALIDATION <span>ส่งออกไฟล์ที่แก้ไข</span></h2>
+<div class="row"><button class="orange" id="exportBtn" disabled>EXPORT MODIFIED BIN</button><button id="restoreBtn" disabled>คืนค่า BIN ต้นฉบับ</button></div>
+<p class="note warn">คำเตือน: การแก้ไข BIN อาจทำให้ ECU สตาร์ทไม่ติดหรืออุปกรณ์เสียหายได้ แอปนี้ยังไม่คำนวณ Checksum/CRC และไม่รองรับการแฟลช ECU ใช้ไฟล์สำรองและตรวจสอบความเข้ากันได้ก่อนใช้งานจริงเสมอ</p>
+<div class="status" id="editStatus">ยังไม่มีการแก้ไข</div>
+</section>
+</main>
+<footer>SRP RACING PART · ENGINEERING SERIES · ECU STUDIO V1.1</footer>
+<script>
+let original=null, working=null, xdfItems=[], binName='', xdfName='', hexPage=0, edits=0;
+const $=id=>document.getElementById(id);
+const bytesHex=n=>'0x'+n.toString(16).toUpperCase().padStart(6,'0');
+function setStatus(msg){$('status').innerHTML=msg}
+function readNum(buf,addr,fmt,endian){
+ const bits=Number(fmt.match(/\d+/)[0]), size=bits/8;
+ if(addr<0||addr+size>buf.length)return null;
+ const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
+ let v=bits===8?dv.getUint8(addr):bits===16?dv.getUint16(addr,endian==='le'):dv.getUint32(addr,endian==='le');
+ if(fmt[0]==='s' && (v & (2**(bits-1)))) v-=2**bits;
+ return v;
+}
+function writeNum(buf,addr,fmt,endian,value){
+ const bits=Number(fmt.match(/\d+/)[0]),size=bits/8, v=Number(value);
+ const min=fmt[0]==='s'?-(2**(bits-1)):0, max=fmt[0]==='s'?(2**(bits-1))-1:(2**bits)-1;
+ if(!Number.isInteger(v)||v<min||v>max)throw Error(`ค่าต้องอยู่ระหว่าง ${min} ถึง ${max}`);
+ if(addr<0||addr+size>buf.length)throw Error('Address อยู่นอกขอบเขต BIN');
+ const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
+ if(bits===8)dv.setUint8(addr,v);else if(bits===16)dv.setUint16(addr,v,endian==='le');else dv.setUint32(addr,v,endian==='le');
+}
+$('binFile').addEventListener('change',async e=>{
+ const f=e.target.files[0];if(!f)return;
+ const a=await f.arrayBuffer();original=new Uint8Array(a);working=new Uint8Array(a);binName=f.name;edits=0;
+ $('binSize').textContent=(a.byteLength/1024).toFixed(1)+' KB';$('fileState').textContent='BIN READY';
+ $('exportBtn').disabled=false;$('restoreBtn').disabled=false;renderHex();renderParams();
+ setStatus(`<strong>${f.name}</strong> โหลดแล้ว · ${a.byteLength.toLocaleString()} bytes`);
+ updateInfo();
+});
+$('xdfFile').addEventListener('change',async e=>{
+ const f=e.target.files[0];if(!f)return;xdfName=f.name;
+ try{
+ const xml=new DOMParser().parseFromString(await f.text(),'application/xml');
+ if(xml.querySelector('parsererror'))throw Error('รูปแบบ XML ไม่ถูกต้อง');
+ xdfItems=[];
+ xml.querySelectorAll('XDFCONSTANT, XDFTABLE').forEach((el,i)=>{
+  const title=el.querySelector(':scope > title')?.textContent?.trim()||el.getAttribute('uniqueid')||`Item ${i+1}`;
+  const emb=el.querySelector('EMBEDDEDDATA');
+  const addr=emb?.getAttribute('mmedaddress');
+  const bits=emb?.getAttribute('mmedelementsizebits')||'8';
+  if(addr!==null && addr!==undefined){
+   let address=parseInt(addr,addr.toLowerCase().startsWith('0x')?16:10);
+   if(!Number.isFinite(address))address=parseInt(addr,16);
+   xdfItems.push({title,address,bits,type:el.tagName,units:el.querySelector('units')?.textContent?.trim()||''});
+  }else{xdfItems.push({title,address:null,bits,type:el.tagName,units:''})}
+ });
+ $('xdfCount').textContent=xdfItems.length;$('fileState').textContent=original?'READY':'XDF READY';
+ renderParams();updateInfo();setStatus(`<strong>${f.name}</strong> อ่าน XDF แล้ว · พบ ${xdfItems.length} รายการ`);
+ }catch(err){setStatus(`<span class="danger">อ่าน XDF ไม่สำเร็จ: ${err.message}</span>`)}
+});
+function renderParams(){
+ const body=$('paramRows');body.innerHTML='';
+ const q=$('paramSearch').value.toLowerCase();
+ const fmt=$('format').value,end=$('endian').value;
+ const filtered=xdfItems.filter(x=>x.title.toLowerCase().includes(q));
+ if(!filtered.length){body.innerHTML='<tr><td colspan="5" class="empty">ไม่พบ Parameter หรือยังไม่ได้โหลด XDF</td></tr>';return}
+ filtered.forEach((x)=>{
+  const tr=document.createElement('tr');
+  const raw=working&&x.address!==null?readNum(working,x.address,fmt,end):null;
+  const addr=x.address===null?'—':bytesHex(x.address);
+  tr.innerHTML=`<td>${escapeHtml(x.title)}<br><small style="color:#7596b4">${x.type} · ${x.bits} bit</small></td><td><code>${addr}</code></td><td>${raw===null?'—':raw}</td><td><input type="number" step="1" style="width:100px;padding:7px" id="v${xdfItems.indexOf(x)}" ${!working||x.address===null?'disabled':''} value="${raw??''}"></td><td><button class="primary" data-edit="${xdfItems.indexOf(x)}" ${!working||x.address===null?'disabled':''}>เขียน</button></td>`;
+  body.appendChild(tr);
+ });
+ body.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>{
+  const i=Number(b.dataset.edit),x=xdfItems[i],input=$('v'+i);
+  try{writeNum(working,x.address,$('format').value,$('endian').value,input.value);edits++;$('editStatus').innerHTML=`<span class="good">แก้ไขแล้ว ${edits} รายการ · ยังไม่ได้ส่งออกไฟล์</span>`;renderParams();renderHex();}
+  catch(err){alert(err.message)}
+ }));
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('paramSearch').addEventListener('input',renderParams);$('format').addEventListener('change',renderParams);$('endian').addEventListener('change',renderParams);
+function renderHex(){
+ if(!working)return;const start=Math.max(0,Number($('hexOffset').value)||0),grid=$('hexGrid');grid.innerHTML='';
+ const end=Math.min(working.length,start+256);
+ for(let i=start;i<end;i++){const d=document.createElement('div');d.className='byte';d.textContent=working[i].toString(16).toUpperCase().padStart(2,'0');d.title=bytesHex(i);grid.appendChild(d)}
+ $('hexOffset').value=start;
+}
+$('showHex').onclick=renderHex;$('prevHex').onclick=()=>{$('hexOffset').value=Math.max(0,(Number($('hexOffset').value)||0)-256);renderHex()};
+$('nextHex').onclick=()=>{$('hexOffset').value=Math.min(Math.max(0,working?.length-1||0),(Number($('hexOffset').value)||0)+256);renderHex()};
+$('exportBtn').onclick=()=>{
+ if(!working)return;const blob=new Blob([working],{type:'application/octet-stream'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=(binName.replace(/\.[^.]+$/,'')||'ecu')+'_modified.bin';a.click();URL.revokeObjectURL(url);
+ $('editStatus').innerHTML=`<span class="good">ส่งออกไฟล์แล้ว · ${edits} edits ใน session นี้</span>`;
+};
+$('restoreBtn').onclick=()=>{if(!original)return;if(!confirm('คืนค่า BIN ต้นฉบับและยกเลิกการแก้ไขทั้งหมด?'))return;working=new Uint8Array(original);edits=0;renderParams();renderHex();$('editStatus').textContent='คืนค่า BIN ต้นฉบับแล้ว'};
+function updateInfo(){
+ $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Items:</b> ${xdfItems.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
+}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
+ document.querySelectorAll('.tabpane').forEach(p=>p.hidden=p.id!==b.dataset.tab);
+});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+</body></html>
