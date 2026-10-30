@@ -409,13 +409,23 @@ function writeNum(buf,addr,fmt,endian,value){
 }
 function directChild(el,tag){return [...el.children].find(c=>c.tagName.toUpperCase()===tag.toUpperCase())||null}
 function directText(el,tag){return directChild(el,tag)?.textContent?.trim()||''}
-function getEmbedded(el){
- const nodes=[...el.querySelectorAll('EMBEDDEDDATA')];
- return nodes[0]||null;
-}
-function getNumAttr(el,names, fallback=null){
+function allEmbedded(el){return [...el.querySelectorAll('EMBEDDEDDATA')]}
+function getNumAttr(el,names,fallback=null){
  for(const n of names){const v=el?.getAttribute(n);if(v!==null&&v!==''){const p=parseAddr(v);if(Number.isFinite(p))return p}}
  return fallback;
+}
+function axisIndexCount(axis){
+ const n=directText(axis,'indexcount');
+ if(n)return Number(n);
+ const emb=allEmbedded(axis)[0];
+ return getNumAttr(emb,['mmedindexcount','mmedcount','mmedrowcount','mmedcolcount'],null);
+}
+function readEmbeddedMeta(owner){
+ const emb=allEmbedded(owner)[0];
+ if(!emb)return {address:null,bits:8,flags:0,embedded:null};
+ return {address:parseAddr(emb.getAttribute('mmedaddress')),
+  bits:getNumAttr(emb,['mmedelementsizebits','mmedelementsize'],8),
+  flags:parseAddr(emb.getAttribute('mmedtypeflags'))||0,embedded:emb};
 }
 function parseXdfXml(text){
  const xml=new DOMParser().parseFromString(text,'application/xml');
@@ -423,34 +433,44 @@ function parseXdfXml(text){
  const root=xml.documentElement;
  if(!/XDFFORMAT/i.test(root.tagName))throw Error('ไม่พบรากเอกสาร XDFFORMAT');
  const items=[],maps=[];
- root.querySelectorAll('XDFCONSTANT, XDFTABLE').forEach((el,i)=>{
+ const header=directChild(root,'XDFHEADER');
+ const definitionTitle=directText(header||root,'deftitle')||'';
+ const nodes=[...root.querySelectorAll(':scope > XDFCONSTANT, :scope > XDFTABLE, :scope > XDFAXIS')];
+ nodes.forEach((el,i)=>{
+  const isTable=el.tagName.toUpperCase()==='XDFTABLE';
   const title=directText(el,'title')||el.getAttribute('uniqueid')||`Item ${i+1}`;
-  const emb=getEmbedded(el);
-  const addr=parseAddr(emb?.getAttribute('mmedaddress'));
-  const bits=getNumAttr(emb,['mmedelementsizebits','mmedelementsize'],8);
-  const flags=parseAddr(emb?.getAttribute('mmedtypeflags'))||0;
-  const item={title,address:addr,bits,type:el.tagName,units:directText(el,'units'),category:el.getAttribute('category')||'',description:directText(el,'description')};
+  const meta=readEmbeddedMeta(el);
+  const math=directChild(el,'MATH')?.getAttribute('equation')||'';
+  const item={title,address:meta.address,bits:meta.bits,flags:meta.flags,type:el.tagName,
+   units:directText(el,'units'),category:el.getAttribute('category')||'',
+   description:directText(el,'description'),math};
   items.push(item);
-  if(el.tagName.toUpperCase()==='XDFTABLE'){
+  if(isTable){
    const axes={};
-   el.querySelectorAll(':scope > XDFAXIS').forEach(ax=>{
-    const id=(ax.getAttribute('id')||'').toLowerCase(), ae=getEmbedded(ax);
-    axes[id]={id,address:parseAddr(ae?.getAttribute('mmedaddress')),
-      bits:getNumAttr(ae,['mmedelementsizebits'],bits),
-      rows:getNumAttr(ae,['mmedrowcount','mmedrows','mmedcount'],null),
-      cols:getNumAttr(ae,['mmedcolcount','mmedcolumns'],null),
-      units:directText(ax,'units'),math:directChild(ax,'MATH')?.getAttribute('equation')||''};
-   });
-   const zAxis=axes.z||{};
-   const rows=zAxis.rows||getNumAttr(emb,['mmedrowcount','mmedrows'],null);
-   const cols=zAxis.cols||getNumAttr(emb,['mmedcolcount','mmedcolumns'],null);
-   maps.push({title,address:addr,bits,flags,axes,rows,cols,category:item.category,description:item.description});
+   for(const ax of [...el.querySelectorAll(':scope > XDFAXIS')]){
+    const id=(ax.getAttribute('id')||'').toLowerCase(),am=readEmbeddedMeta(ax);
+    axes[id]={id,address:am.address,bits:am.bits,flags:am.flags,count:axisIndexCount(ax),
+     units:directText(ax,'units'),math:directChild(ax,'MATH')?.getAttribute('equation')||'',
+     description:directText(ax,'description')};
+   }
+   const z=axes.z||{},x=axes.x||{},y=axes.y||{};
+   // In TunerPro XDF, table storage/address and element format are commonly defined on the Z axis.
+   const addr=z.address??meta.address,bits=z.bits||meta.bits,flags=z.flags||meta.flags;
+   const rows=y.count||getNumAttr(meta.embedded,['mmedrowcount','mmedrows'],null);
+   const cols=x.count||getNumAttr(meta.embedded,['mmedcolcount','mmedcolumns'],null);
+   maps.push({title,address:addr,bits,flags,axes,rows,cols,category:item.category,description:item.description,math:z.math||math});
   }
  });
- return {items,maps};
+ return {items,maps,definitionTitle};
 }
 function isProtectedTunerProXdf(bytes){
  return bytes.length>=4&&bytes[0]===0x05&&bytes[1]===0x22&&bytes[2]===0x97&&bytes[3]===0x00;
+}
+function decodeXdfText(bytes){
+ // XDF XML files are normally UTF-8; Windows-1252 is a common legacy encoding.
+ let text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
+ if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
+ return text;
 }
 $('binFile').addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;
@@ -468,11 +488,11 @@ $('xdfFile').addEventListener('change',async e=>{
   xdfItems=[];xdfMaps=[];
   if(protectedXdf){
    $('xdfCount').textContent='LOCKED';$('fileState').textContent='PROTECTED XDF';
-   $('mapMeta').innerHTML='<div class="protected-box"><b>ตรวจพบ TunerPro Native / Protected XDF</b><br>ไฟล์นี้ขึ้นต้นด้วย Signature 05 22 97 00 ซึ่งเป็น Container แบบ Binary/Protected ไม่ใช่ XDF XML ที่เว็บแอปอ่านได้โดยตรง แอปจะไม่พยายามถอดรหัสหรือแก้ไขการป้องกันไฟล์<br><br><b>วิธีดำเนินการ:</b> ขอ Definition แบบ XML ที่ผู้สร้างอนุญาตให้ส่งออก หรือใช้ฟังก์ชัน Export ที่ผู้จัดทำ Definition รองรับ แล้วนำไฟล์ XML ที่ได้มาเปิดที่นี่</div>';
+   $('mapMeta').innerHTML='<div class="protected-box"><b>ตรวจพบ XDF แบบ Binary Container</b><br>ไฟล์นี้ขึ้นต้นด้วย Signature 05 22 97 00 ซึ่งไม่ใช่ XML ที่อ่านได้โดยตรงจากเบราว์เซอร์ ขณะนี้ยังไม่มีข้อกำหนดรูปแบบหรือ API ที่ยืนยันวิธีแปลข้อมูลภายใน จึงยังไม่สามารถดึงรายการ Map ได้<br><br><b>วิธีดำเนินการ:</b> ขอ Definition แบบ XML ที่ผู้สร้างอนุญาตให้ส่งออก หรือใช้ฟังก์ชัน Export ที่ผู้จัดทำ Definition รองรับ แล้วนำไฟล์ XML ที่ได้มาเปิดที่นี่</div>';
    $('mapGridWrap').innerHTML='<div class="empty">ยังไม่สามารถอ่านรายการ Map จาก Protected XDF นี้ได้</div>';
-   setStatus(`<span class="warn"><strong>${escapeHtml(f.name)}</strong> ตรวจพบไฟล์ TunerPro Protected XDF · ไม่ใช่ไฟล์เสีย แต่เป็นรูปแบบ Binary/Protected ที่ยังไม่มี interface สำหรับอ่านใน SRP PROTUNER</span>`);
+   setStatus(`<span class="warn"><strong>${escapeHtml(f.name)}</strong> ตรวจพบ XDF แบบ Binary Container · ไม่ใช่ XML มาตรฐานที่ Parser รุ่นนี้รองรับ</span>`);
   }else{
-   const parsed=parseXdfXml(new TextDecoder('utf-8').decode(bytes));
+   const parsed=parseXdfXml(decodeXdfText(bytes));
    xdfItems=parsed.items;xdfMaps=parsed.maps;
    $('xdfCount').textContent=xdfItems.length;$('fileState').textContent=original?'READY':'XDF READY';
    renderParams();renderMap();updateInfo();
@@ -560,7 +580,7 @@ $('exportBtn').onclick=()=>{
 $('restoreBtn').onclick=()=>{if(!original)return;if(!confirm('คืนค่า BIN ต้นฉบับและยกเลิกการแก้ไขทั้งหมด?'))return;working=new Uint8Array(original);edits=0;renderParams();renderHex();renderMap();$('editStatus').textContent='คืนค่า BIN ต้นฉบับแล้ว'};
 function updateInfo(){
  if(!$('fileInfo'))return;
- $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Format:</b> ${protectedXdf?'TunerPro Native / Protected Binary':(xdfItems.length?'XML':'ยังไม่อ่าน')}<br><b>Items:</b> ${xdfItems.length} · <b>Maps:</b> ${xdfMaps.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
+ $('fileInfo').innerHTML=`<p><b>BIN:</b> ${escapeHtml(binName||'ยังไม่ได้เลือก')}<br><b>Size:</b> ${original?original.length.toLocaleString()+' bytes':'—'}</p><p><b>XDF:</b> ${escapeHtml(xdfName||'ยังไม่ได้เลือก')}<br><b>Format:</b> ${protectedXdf?'Binary Container (ยังไม่รองรับการแปลโครงสร้าง)':(xdfItems.length?'XML':'ยังไม่อ่าน')}<br><b>Items:</b> ${xdfItems.length} · <b>Maps:</b> ${xdfMaps.length}</p><p>ไฟล์ถูกอ่านและประมวลผลภายในเบราว์เซอร์ ไม่ได้อัปโหลดไปยังเซิร์ฟเวอร์</p>`;
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
